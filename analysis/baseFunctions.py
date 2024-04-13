@@ -54,3 +54,8 @@ def tsplot(y, lags=None, name = '', figsize=(12, 7), style='bmh'):
         plt.tight_layout()
         plt.savefig(name + '_pacf.jpg')
         fig.show()
+
+
+
+# resample stuff
+# df_resampled = ePrices.resample('1H').asfreq()
