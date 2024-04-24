@@ -12,6 +12,7 @@ from statsmodels.tsa.stattools import acf, pacf
 from statsmodels.tsa.arima_model import ARIMA as ARIMA
 import statsmodels.api as sm
 import statsmodels.tsa.api as smt
+from scipy.signal import periodogram
 
 def test_stationarity(timeseries):
     #Determing rolling statistics
@@ -55,7 +56,70 @@ def tsplot(y, lags=None, name = '', figsize=(12, 7), style='bmh'):
         plt.savefig(name + '_pacf.jpg')
         fig.show()
 
+def seasonal_plot(X, y, period, freq, ax=None):
+    if ax is None:
+        _, ax = plt.subplots()
+    palette = sns.color_palette("husl", n_colors=X[period].nunique(),)
+    ax = sns.lineplot(
+        x=freq,
+        y=y,
+        hue=period,
+        data=X,
+        ci=False,
+        ax=ax,
+        palette=palette,
+        legend=False,
+    )
+    ax.set_title(f"Seasonal Plot ({period}/{freq})")
+    for line, name in zip(ax.lines, X[period].unique()):
+        y_ = line.get_ydata()[-1]
+        ax.annotate(
+            name,
+            xy=(1, y_),
+            xytext=(6, 0),
+            color=line.get_color(),
+            xycoords=ax.get_yaxis_transform(),
+            textcoords="offset points",
+            size=14,
+            va="center",
+        )
+    return ax
 
+
+def plot_periodogram(ts, cyclesPerUnit, n_domFreq = 15, detrend='linear', ax=None):
+    freqencies, power = periodogram(
+        ts,
+        fs=cyclesPerUnit,
+        detrend=detrend,
+        window="boxcar",
+        scaling='spectrum',
+    )
+    if ax is None:
+        _, ax = plt.subplots()
+    ax.step(freqencies, power, color="purple")
+    ax.set_xscale("log")
+    ax.set_ylabel("Variance")
+    ax.set_title("Periodogram")
+
+    sorted_indices = np.argsort(power)[::-1]  # Sort indices in descending order of power
+    dominant_freqs = freqencies[sorted_indices[:n_domFreq]]
+    print(dominant_freqs)
+    #return freqencies, power 
+
+
+def createFourierFeatures():
+    from statsmodels.tsa.deterministic import CalendarFourier, DeterministicProcess
+
+    fourier = CalendarFourier(freq="A", order=10)  # 10 sin/cos pairs for "A"nnual seasonality
+
+    dp = DeterministicProcess(
+        index=tunnel.index,
+        constant=True,               # dummy feature for bias (y-intercept)
+        order=1,                     # trend (order 1 means linear)
+        seasonal=True,               # weekly seasonality (indicators)
+        additional_terms=[fourier],  # annual seasonality (fourier)
+        drop=True,                   # drop terms to avoid collinearity
+    )
 
 # resample stuff
 # df_resampled = ePrices.resample('1H').asfreq()
