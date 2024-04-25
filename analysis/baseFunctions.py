@@ -107,19 +107,19 @@ def plot_periodogram(ts, cyclesPerUnit, n_domFreq = 15, detrend='linear', ax=Non
     #return freqencies, power 
 
 
-def createFourierFeatures():
-    from statsmodels.tsa.deterministic import CalendarFourier, DeterministicProcess
-
-    fourier = CalendarFourier(freq="A", order=10)  # 10 sin/cos pairs for "A"nnual seasonality
-
-    dp = DeterministicProcess(
-        index=tunnel.index,
-        constant=True,               # dummy feature for bias (y-intercept)
-        order=1,                     # trend (order 1 means linear)
-        seasonal=True,               # weekly seasonality (indicators)
-        additional_terms=[fourier],  # annual seasonality (fourier)
-        drop=True,                   # drop terms to avoid collinearity
-    )
+def addFourierFeature(data1, n_splits, frequency, feature, referenceTimespan):
+    # data1                 dataframe that will be returned
+    # n_splits              how many fourier features per frequency do we want
+    # frequency             frequency of feature based on reference timespan, e.g. 365 days, frequency of 12 = monthly = 12 sinus periods per year, frequency of 1 = 1 sinus curve per year
+    # feature               feature we want to base the feature on
+    # referenceTimespan     timespan we base our frequency on, e.g. 365 days for a year (if I have daily data)
+    periodicfeat = []
+    for i in range(n_splits):
+        deg = int(360/n_splits *i)
+        f = feature +'_f'+str(frequency)+'_'+str(deg)
+        periodicfeat.append(f)
+        data1[f] = np.sin(2*np.pi*(frequency*data1[feature]/referenceTimespan) + 2*np.pi* i/n_splits)
+    return data1, periodicfeat
 
 # resample stuff
 # df_resampled = ePrices.resample('1H').asfreq()
