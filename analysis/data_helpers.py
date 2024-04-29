@@ -1,4 +1,5 @@
 import pandas as pd
+from baseFunctions import *
 
 def processData6():
     # prepare data
@@ -91,7 +92,27 @@ def processData6():
 
     return data6, propDicts, flippedPropDicts
 
-    
+def featureEngineering(data1, frequencies = [12,104,24,52], splits=[1,1,1,1], refTimeSpan=365, feature='day_of_year', oneHotWeekday = False):
+    # add linear time
+    data1['linear_time'] = (data1['date'] - data1['date'].iloc[0]).dt.days +1
+    data1['day_of_year'] = data1['date'].dt.day_of_year
+
+    featureNames = []
+
+    for i,f in enumerate(frequencies):
+        data1, periodicfeat = addFourierFeature(data1, n_splits = splits[i], frequency=f, feature=feature, referenceTimespan = refTimeSpan)
+        featureNames = featureNames + periodicfeat
+
+    data1['weekday'] = data1['date'].dt.weekday
+    data1['month'] = data1['date'].dt.month
+
+    if oneHotWeekday:
+        one_hot_encoded = pd.get_dummies(data1.weekday, prefix='weekday').astype(int)
+        data1 = pd.concat([data1, one_hot_encoded], axis=1)
+        data1 = data1.drop('weekday', axis = 1)
+
+    return data1, featureNames
+
 def sanityChecks(holidays, stores, train4, train5):
     # check that the city holidays are the same in the holiday and store df
     uniqueLocalsHolidays = holidays.loc[holidays.locale =='Local'].locale_name.unique()
