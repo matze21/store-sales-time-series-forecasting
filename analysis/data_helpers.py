@@ -90,7 +90,14 @@ def processData6():
     for key,value in propDicts.items():
         flippedPropDicts[key] = {value: key for key, value in propDicts[key].items()}
 
-    return data6, propDicts, flippedPropDicts
+    transactions['date'] = pd.to_datetime(transactions['date'])
+    data7 =pd.merge(data6,transactions, on=['store_nbr','date'], how='left')
+
+    data7['store_closed'] = data7.transactions.isna().astype(int)
+    data7.loc[data7.dataT == 'test', 'store_closed'] = 0
+    #data7 = data7.drop('transactions', axis = 1)
+
+    return data7, propDicts, flippedPropDicts
 
 def featureEngineering(data1, frequencies = [12,104,24,52], splits=[1,1,1,1], refTimeSpan=365, feature='day_of_year', oneHotWeekday = False):
     # add linear time
@@ -112,6 +119,91 @@ def featureEngineering(data1, frequencies = [12,104,24,52], splits=[1,1,1,1], re
         data1 = data1.drop('weekday', axis = 1)
 
     return data1, featureNames
+
+def plotSales(df, storeId : int, family :str, familyId, p_value, save=False):
+    plt.figure(figsize=(15,20))
+
+    family=family.replace('/','-')
+    
+    fig, axs = plt.subplots(nrows=3, ncols=1, figsize=(8, 6))
+    axs[0].plot(df.date, df.sales, color='blue',label='Original')
+    axs[0].plot(df.date, df.sales_outRem, color='red',label='out_rem')
+    axs[0].set_title(str(storeId)+'  '+str(familyId) + family + ' p_value:' + str(p_value))
+    
+
+    axs[1].plot(df.date, np.log(df.sales+1), color='blue')
+    axs[1].set_title('log sales')
+    axs[2].plot(df.date ,np.log(df.sales+1).diff(21), color='blue')
+    axs[2].set_title('log sales, diff 3 weeks')
+
+    fig.subplots_adjust(hspace=0.5)
+    #orig = plt.plot(df.sales, color='blue',label='Original')
+    #orig = plt.plot(df.sales_outRem, color='red',label='out_rem')
+
+    if save:
+        plt.savefig('graphs/plot_'+str(storeId)+'_'+str(familyId) + family+'.jpg')
+    else:
+        plt.show(block=False)
+
+def filterDataForOutliers(data, familyId, storeId, flippedPropDicts, checkStationary = False, render = False, saveFig = False):
+    a = data.loc[(data.store_nbr == storeId) & (data.family == familyId) & (data.dataT == 'train')].copy()
+
+    #remove feb29
+    #a = a.loc[~((a.date.dt.day==29) & (a.date.dt.month==2))]
+
+    if 0: # do not filter away initial periods
+        a.loc[:,'cumsum0'] = a.sales.cumsum()
+
+        # filter out if product is not offered
+        a = a.loc[a.cumsum0 > 0]
+
+    # only consider data after july 2015 /other stuff seems to be too old
+    a = a.loc[a.date > "2015-07-01"]
+
+    # check if stationary
+    if checkStationary:
+        try:
+            #p_value = test_stationarity(np.log(a.sales+1).diff(21), 12, True)
+            p_value = test_stationarity(a.sales, 12, False)
+        except:
+            p_value = 1e6
+        isStationary = p_value < 0.05
+    
+    # check if lots of 0s
+    counts, bins = np.histogram(a.sales, bins=50)
+    binZero = counts[0]
+    binNextZero = -1
+    for i,count in enumerate(counts):
+        if i > 0 and count != 0:
+            binNextZero = count
+            break
+    isZeroSinglePeak = binZero > 2*binNextZero
+
+    countsSorted = np.sort(counts)[::-1]
+    significantZeroPart = binZero > countsSorted[1]
+
+    fishy = (significantZeroPart and isZeroSinglePeak)# or not isStationary
+
+    # remove outliers  ---- seems to work ok-ish
+    a.loc[:,'rolling7'] = a.sales.rolling(14).mean()
+    a.loc[:,'rolling7std'] = a.sales.rolling(14).std()
+    a.loc[:,'rollingThreshold'] = (a['rolling7'] + 5* a['rolling7std']).shift(1)
+    a['absMean'] = a.sales.mean() + 5*a.sales.std()
+    a['sales_outRem'] = a.sales
+
+    if fishy:
+        a.loc[(a.sales>2*a.absMean) & (a.sales>a.rollingThreshold) & (a.sales>20),'sales_outRem'] = np.nan
+    else:
+        a.loc[(a.sales>a.absMean) & (a.sales>a.rollingThreshold),'sales_outRem'] = np.nan
+
+    hasOutliers = a.sales_outRem.isna().sum()
+    a['sales_outRem'] = a.sales_outRem.interpolate(limit_direction='both')
+
+    
+    if render and (isfishy or hasOutliers):
+        print(storeId, familyId, 'stationary ',isStationary, p_value, 'n_outliers: ',hasOutliers,flippedPropDicts['family'][familyId])
+        plotSales(a, storeId, flippedPropDicts['family'][familyId], familyId, p_value, save=saveFig)
+    return a
 
 def sanityChecks(holidays, stores, train4, train5):
     # check that the city holidays are the same in the holiday and store df
