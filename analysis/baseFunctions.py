@@ -14,10 +14,10 @@ import statsmodels.api as sm
 import statsmodels.tsa.api as smt
 from scipy.signal import periodogram
 
-def test_stationarity(timeseries):
+def test_stationarity(timeseries, window = 12, printOutput=True):
     #Determing rolling statistics
-    MA = timeseries.rolling(window = 12).mean()
-    MSTD = timeseries.rolling(window = 12).std()
+    MA = timeseries.rolling(window = window).mean()
+    MSTD = timeseries.rolling(window = window).std()
 
     #Plot rolling statistics:
     plt.figure(figsize=(15,5))
@@ -34,7 +34,9 @@ def test_stationarity(timeseries):
     dfoutput = pd.Series(dftest[0:4], index=['Test Statistic','p-value','#Lags Used','Number of Observations Used'])
     for key,value in dftest[4].items():
         dfoutput['Critical Value (%s)'%key] = value
-    print(dfoutput)
+    if printOutput:
+        print(dfoutput)
+    return dftest[1] # return p value
 
 def tsplot(y, lags=None, name = '', figsize=(12, 7), style='bmh'):
     if not isinstance(y, pd.Series):
