@@ -145,7 +145,82 @@ def plotSales(df, storeId : int, family :str, familyId, p_value, save=False):
     else:
         plt.show(block=False)
 
-def filterDataForOutliers(data, familyId, storeId, flippedPropDicts, checkStationary = False, render = False, saveFig = False):
+
+def create_sequences(data, length):
+    # Compute the strides and itemsize
+    strides = (data.strides[0], data.strides[1], data.strides[0])
+    shape = (data.shape[0] - length + 1, data.shape[1], length)
+
+    # Create a view into the array with the given shape and strides
+    sequences = np.lib.stride_tricks.as_strided(data, shape=shape, strides=strides, writeable=False)
+
+    return sequences
+
+def flattenInto2d(train, look_back, predictedVal, a, b, l):
+    maxLen = train.shape[0] - look_back-predictedVal
+    a1 = np.reshape(a[0:maxLen,:,:], (maxLen,-1))
+    b1 = np.reshape(b[0:maxLen,:,:], (maxLen,-1))
+    X = np.concatenate((a1,b1), axis=1)
+    y = np.reshape(l, (maxLen,-1))
+
+    return X,y
+
+def getSequencesFast(train, trainF, look_back, n_predictedValues, zScoreNorm = False, applyZScoreNorm = False, meanZ = 0, stdZ = 0):
+    # zscore over all values -> not ideal bc test data
+    if zScoreNorm:
+        mean = train.sales.mean()
+        mean = 0 # modified zScore, not in mean = 0
+        std = max(train.sales.std(), 1)
+        train.loc[:,'sales'] = (train.sales - mean) / std
+    if applyZScoreNorm:
+        train.loc[:,'sales'] = (train.sales-meanZ)/stdZ
+
+    trainF2 = trainF + ['sales']
+
+
+    pastS   = create_sequences(train[trainF].to_numpy(), look_back)                                   #past sequence
+    futureS = create_sequences(train[trainF2].iloc[look_back:-1].to_numpy(), n_predictedValues)        #future sequence
+    label   = create_sequences(train[['sales']].iloc[look_back:-1].to_numpy(), n_predictedValues) #label
+
+    X, y = flattenInto2d(train, look_back, n_predictedValues, pastS, futureS, label)
+
+    if zScoreNorm:
+        return X, y, mean, std
+    elif applyZScoreNorm:
+        return X,y
+    else:
+        return X,y
+
+def removeOutliers(a):
+     # check if lots of 0s
+    counts, bins = np.histogram(a.sales, bins=50)
+    binZero = counts[0]
+    binNextZero = -1
+    for i,count in enumerate(counts):
+        if i > 0 and count != 0:
+            binNextZero = count
+            break
+    isZeroSinglePeak = binZero > 2*binNextZero
+    countsSorted = np.sort(counts)[::-1]
+    significantZeroPart = binZero > countsSorted[1]
+    fishy = (significantZeroPart and isZeroSinglePeak)# or not isStationary
+
+
+    # remove outliers  ---- seems to work ok-ish
+    a.loc[:,'rolling7'] = a.sales.rolling(14).mean()
+    a.loc[:,'rolling7std'] = a.sales.rolling(14).std()
+    a.loc[:,'rollingThreshold'] = (a['rolling7'] + 5* a['rolling7std']).shift(1)
+    a['absMean'] = a.sales.mean() + 5*a.sales.std()
+    a['sales_outRem'] = a.sales
+    if fishy:
+        a.loc[(a.sales>2*a.absMean) & (a.sales>a.rollingThreshold) & (a.sales>20),'sales_outRem'] = np.nan
+    else:
+        a.loc[(a.sales>a.absMean) & (a.sales>a.rollingThreshold),'sales_outRem'] = np.nan
+    hasOutliers = a.sales_outRem.isna().sum()
+    a['sales_outRem'] = a.sales_outRem.interpolate(limit_direction='both')
+    return a
+
+def filterDataForOutliersDeprecated(data, familyId, storeId, flippedPropDicts, checkStationary = False, render = False, saveFig = False):
     a = data.loc[(data.store_nbr == storeId) & (data.family == familyId) & (data.dataT == 'train')].copy()
 
     #remove feb29
@@ -204,6 +279,42 @@ def filterDataForOutliers(data, familyId, storeId, flippedPropDicts, checkStatio
         print(storeId, familyId, 'stationary ',isStationary, p_value, 'n_outliers: ',hasOutliers,flippedPropDicts['family'][familyId])
         plotSales(a, storeId, flippedPropDicts['family'][familyId], familyId, p_value, save=saveFig)
     return a
+
+def getSequencesDeprecated(train, trainF, trainF2, look_back, n_predictedValues, zScoreNorm = False, applyZScoreNorm = False, meanZ = 0, stdZ = 0):
+    sequence0 = []
+    sequence1 = []
+    labels = []
+
+    # zscore over all values -> not ideal bc test data
+    if zScoreNorm:
+        mean = train.sales.mean()
+        mean = 0 # modified zScore, not in mean = 0
+        std = max(train.sales.std(), 1)
+        train.loc[:,'sales'] = (train.sales - mean) / std
+    if applyZScoreNorm:
+        train.loc[:,'sales'] = (train.sales-meanZ)/stdZ
+    for i in range(train.shape[0]-look_back-n_predictedValues):
+        startS0 = i
+        endS0 = startS0 + look_back
+        endS1 = endS0 + n_predictedValues
+        sequence0.append(train[trainF2].iloc[startS0:endS0].to_numpy().flatten())
+        sequence1.append(train[trainF].iloc[endS0:endS1].to_numpy().flatten())
+        labels.append(train['sales'].iloc[endS0:endS1])
+
+    sequence0 = np.stack(sequence0, axis = 0)
+    sequence1 = np.stack(sequence1, axis=0)
+    labels    = np.stack(labels, axis = 0)
+
+
+    X = np.concatenate((sequence0, sequence1), axis=1)
+    y = labels
+
+    if zScoreNorm:
+        return X, y, mean, std
+    elif applyZScoreNorm:
+        return X,y
+    else:
+        return X,y
 
 def sanityChecks(holidays, stores, train4, train5):
     # check that the city holidays are the same in the holiday and store df
