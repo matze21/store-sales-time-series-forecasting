@@ -168,7 +168,7 @@ def flattenInto2d(train, look_back, predictedVal, a, b, l):
 def getSequencesFast(train, trainF, look_back, n_predictedValues, zScoreNorm = False, applyZScoreNorm = False, meanZ = 0, stdZ = 0):
     # zscore over all values -> not ideal bc test data
     if zScoreNorm:
-        mean = train.sales.mean()
+        #mean = train.sales.mean()
         mean = 0 # modified zScore, not in mean = 0
         std = max(train.sales.std(), 1)
         train.loc[:,'sales'] = (train.sales - mean) / std
@@ -178,8 +178,8 @@ def getSequencesFast(train, trainF, look_back, n_predictedValues, zScoreNorm = F
     trainF2 = trainF + ['sales']
 
 
-    pastS   = create_sequences(train[trainF].to_numpy(), look_back)                                   #past sequence
-    futureS = create_sequences(train[trainF2].iloc[look_back:-1].to_numpy(), n_predictedValues)        #future sequence
+    pastS   = create_sequences(train[trainF2].to_numpy(), look_back)                                   #past sequence
+    futureS = create_sequences(train[trainF].iloc[look_back:-1].to_numpy(), n_predictedValues)        #future sequence
     label   = create_sequences(train[['sales']].iloc[look_back:-1].to_numpy(), n_predictedValues) #label
 
     X, y = flattenInto2d(train, look_back, n_predictedValues, pastS, futureS, label)
