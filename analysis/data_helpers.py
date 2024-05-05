@@ -191,6 +191,31 @@ def getSequencesFast(train, trainF, look_back, n_predictedValues, zScoreNorm = F
     else:
         return X,y
 
+def getSequencesFastNOTFlattened(train, trainF, look_back, n_predictedValues, zScoreNorm = False, applyZScoreNorm = False, meanZ = 0, stdZ = 0):
+    # zscore over all values -> not ideal bc test data
+    if zScoreNorm:
+        #mean = train.sales.mean()
+        mean = 0 # modified zScore, not in mean = 0
+        std = max(train.sales.std(), 1)
+        train.loc[:,'sales'] = (train.sales - mean) / std
+    if applyZScoreNorm:
+        train.loc[:,'sales'] = (train.sales-meanZ)/stdZ
+
+    trainF2 = trainF + ['sales']
+
+
+    pastS   = create_sequences(train[trainF2].to_numpy(), look_back)                                   #past sequence
+    futureS = create_sequences(train[trainF].iloc[look_back:-1].to_numpy(), n_predictedValues)        #future sequence
+    label   = create_sequences(train[['sales']].iloc[look_back:-1].to_numpy(), n_predictedValues) #label
+
+
+    if zScoreNorm:
+        return pastS, futureS, label, mean, std
+    elif applyZScoreNorm:
+        return pastS, futureS, label
+    else:
+        return pastS, futureS, label
+
 def removeOutliers(a):
      # check if lots of 0s
     counts, bins = np.histogram(a.sales, bins=50)
