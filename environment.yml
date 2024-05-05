@@ -15,5 +15,6 @@ dependencies:
   - xgboost
   - statsmodels
   - seaborn
+  - prophet
 
 
