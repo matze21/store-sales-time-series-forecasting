@@ -191,6 +191,38 @@ def getSequencesFast(train, trainF, look_back, n_predictedValues, zScoreNorm = F
     else:
         return X,y
 
+def getSimpleSequence(train, n_predictedValues, features, zScoreNorm = False, applyZScoreNorm = False, meanZ = 0, stdZ = 0):
+    """
+    only a 1d sequence, e.g. a 16 strided sequence, the past features have to be in the train df already included
+    """
+    sequence0 = []
+    labels = []
+
+    # zscore over all values -> not ideal bc test data
+    if zScoreNorm:
+        mean = train.sales.mean()
+        mean = 0 # modified zScore, not in mean = 0
+        std = max(train.sales.std(), 1)
+        train.loc[:,'sales'] = (train.sales - mean) / std
+    if applyZScoreNorm:
+        train.loc[:,'sales'] = (train.sales-meanZ)/stdZ
+
+    for i in range(train.shape[0]-n_predictedValues):
+        startS0 = i
+        endS0 = startS0 + n_predictedValues
+        sequence0.append(train[features].iloc[startS0:endS0].to_numpy())
+        labels.append(train['sales'].iloc[startS0:endS0])
+
+    X = np.stack(sequence0, axis = 0)
+    y    = np.stack(labels, axis = 0)
+
+    if zScoreNorm:
+        return X, y, mean, std
+    elif applyZScoreNorm:
+        return X,y
+    else:
+        return X,y
+
 def getSequencesFastNOTFlattened(train, trainF, look_back, n_predictedValues, zScoreNorm = False, applyZScoreNorm = False, meanZ = 0, stdZ = 0):
     # zscore over all values -> not ideal bc test data
     if zScoreNorm:
