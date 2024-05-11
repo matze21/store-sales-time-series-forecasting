@@ -66,13 +66,16 @@ def processData6():
 
     data5 = data4.copy()
     data5['holidayType'] = data5['holidayType'].combine_first(data5['type_reg'])
-    data5['holidayType'] = data5['holidayType'].combine_first(data5['type_nat'])    
+    data5['holidayType'] = data5['holidayType'].combine_first(data5['type_nat'])
+    data5['holidayType'] = data5['holidayType'].fillna(0)
 
     data5['description'] = data5['description'].combine_first(data5['description_reg'])
     data5['description'] = data5['description'].combine_first(data5['description_nat']) 
+    data5['description'] = data5['description'].fillna(0)
 
     data5['transferred'] = data5['transferred'].combine_first(data5['transferred_reg'])
     data5['transferred'] = data5['transferred'].combine_first(data5['transferred_nat']) 
+    data5['transferred'] = data5['transferred'].fillna(0)
 
     data5 = data5.drop(columns=['type_reg','type_nat','description_reg','description_nat','transferred_reg','transferred_nat']) 
 
@@ -81,7 +84,11 @@ def processData6():
     data6 = data5.copy()
     propDicts = {}
     for f in ['family','city','state','type','holidayType','description','transferred']:
-        unique = data6[f].unique()
+        a = data6[f].value_counts().to_dict()
+        unique = []
+        # sort based on occurance
+        for key, val in enumerate(a):
+            unique.append(val)
         category_dict = {category: index for index, category in enumerate(unique)}
         data6[f] = data6[f].map(category_dict)
         propDicts[f] = category_dict    
