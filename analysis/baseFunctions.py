@@ -14,6 +14,24 @@ import statsmodels.api as sm
 import statsmodels.tsa.api as smt
 from scipy.signal import periodogram
 
+#dec = sm.tsa.seasonal_decompose(dailyData,period = 12, model = 'additive').plot()
+
+def addSeasonality(dt, dec, outputLength):
+    first365Vals = dec.seasonal[0:dt] 
+    first365Vals = first365Vals / max(first365Vals) 
+
+    folds = int(outputLength/ dt)
+    rest = (outputLength % dt) 
+
+    seasonalVals = np.ones((outputLength)) * np.nan
+    for i in range(folds):
+        firstId = i*dt
+        second = firstId + dt
+        seasonalVals[firstId:second] = first365Vals
+    seasonalVals[second:second+rest] = first365Vals[0:rest]
+
+    return seasonalVals
+
 def test_stationarity(timeseries, window = 12, printOutput=True):
     #Determing rolling statistics
     MA = timeseries.rolling(window = window).mean()
