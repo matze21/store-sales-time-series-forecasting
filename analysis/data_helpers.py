@@ -1,7 +1,7 @@
 import pandas as pd
 from baseFunctions import *
 
-def processData6():
+def processData6(oneHotEnodeCatFeat=False):
     # prepare data
     train = pd.read_csv('../train.csv')
     oil = pd.read_csv('../oil.csv')
@@ -96,6 +96,13 @@ def processData6():
     flippedPropDicts = {}
     for key,value in propDicts.items():
         flippedPropDicts[key] = {value: key for key, value in propDicts[key].items()}
+
+    if oneHotEnodeCatFeat:
+        for f in ['family','city','state','type','holidayType','description']:
+            one_hot_encoded = pd.get_dummies(data6[f], prefix=f).astype(int)
+            data6 = pd.concat([data6, one_hot_encoded], axis=1)
+            #data6 = data6.drop('weekday', axis = 1)
+
 
     transactions['date'] = pd.to_datetime(transactions['date'])
     data7 =pd.merge(data6,transactions, on=['store_nbr','date'], how='left')
