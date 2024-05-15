@@ -420,3 +420,146 @@ def sanityChecks(holidays, stores, train4, train5):
     holTypes2 = rows - train4.transferred_nat.isna().sum()
     sumTypes = holTypes + holTypes1 + holTypes2
     print(sumTypes, rows - train5.transferred.isna().sum())
+
+
+def addLaggedFutureHolidays(storeDf, features = ['transferred', 'holidayType'], lags = 10):
+       transferredF = []
+       for i in range(lags):
+              lag = i+1 # (1-5)
+              for f in features:
+                     f0 = f+'_lag'+str(lag)
+                     f1 = f+'_lag-'+str(lag)
+                     storeDf.loc[:,[f0]] = storeDf[f].shift(lag).fillna(0)
+                     storeDf.loc[:,[f1]] = storeDf[f].shift(-lag).fillna(0)
+                     transferredF.append(f0)
+                     transferredF.append(f1)
+       return storeDf, transferredF
+
+
+def dataProcessing(storeDf, date_string_val, date_string_test, predictDiff, seasonalFDiff, seasonalLags, targetLags, rolling, initial_lag, prepPred = False):
+
+       """ create training data based on lagged features not 2 sequences """
+       trainF = [
+              #'store_nbr', 'family', 
+              #'sales', 
+              'onpromotion',# 'dataT',
+              #'city', 'state', 'type', 'cluster', 
+              'dcoilwtico', 
+              'holidayType',
+              'description', 
+              'transferred', 
+              'transactions', 
+              'store_closed',
+              'weekday_0', 'weekday_1', 'weekday_2',
+              'weekday_3', 'weekday_4', 'weekday_5', 'weekday_6',
+              #'type_0','type_1','type_2','type_3','type_4', #store type
+              'holidayType_0','holidayType_1','holidayType_2','holidayType_3','holidayType_4','holidayType_5','holidayType_6',
+              'description_0','description_1','description_2','description_3','description_4','description_5','description_6','description_7','description_8','description_9','description_10','description_11','description_12','description_13','description_14','description_15','description_16','description_17','description_18'
+   
+              ]
+       timeF = [
+              'linear_time', 'day_of_year', 'day_of_year_f12_0', 'day_of_year_f104_0','day_of_year_f24_0',  'day_of_year_f52_0',
+              'day_of_year_f12_180', 'day_of_year_f104_180','day_of_year_f24_180','day_of_year_f52_180', 
+              #'weekday', 
+              'month'
+              ]
+       if not prepPred:
+              storeDf = storeDf.loc[(storeDf.dataT == 'train')]
+              mask = (storeDf.date >= date_string_val)
+              storeDf.loc[mask,['dataT']] = 'val'
+
+       # ln tranformation
+       storeDf.loc[:,['logSales']] = np.log(storeDf.sales + 1)
+       storeDf.loc[:,['transactions']] = storeDf['transactions'].fillna(0)
+
+       
+       relevantSales = storeDf.loc[storeDf.dataT =='train']
+       dfLen = storeDf.shape[0]
+
+
+       seasonF = []
+       for period in [7, 14,21,28,52,104,365]:
+              for pf in ['logSales','transactions','dcoilwtico']:
+                     dec = sm.tsa.seasonal_decompose(relevantSales[pf],period = period, model = 'additive')
+                     #print(period, max(dec.seasonal))
+                     f = pf+'Seasonality_'+str(period)
+                     storeDf.loc[:,[f]] = addSeasonality(period, dec, dfLen)
+                     seasonF.append(f)
+       seasonF.append('dcoilwtico')
+       #print('done with seasonal decompose')
+
+       if predictDiff:
+              storeDf.loc[:,['ref']] = storeDf['logSales'].shift(initial_lag)
+              storeDf.loc[:,['target']] = storeDf['logSales'] - storeDf['ref']
+       else:
+              storeDf.loc[:,['target']] = storeDf['logSales']
+
+              
+       seasonDiffF2 = []
+       for f in seasonF:
+              newF = f+'_diff'+str(seasonalFDiff)
+              storeDf.loc[:,[newF]] = storeDf[f].diff(seasonalFDiff)
+              seasonDiffF2.append(newF)
+       
+       # seasonal featuers lags
+       seasonalFLags = seasonF + seasonDiffF2
+       featuresForSLag = []#trainF
+       for i in seasonalLags:
+              lag = i
+              newF = [seasonalFLags[j] + '_lag' + str(lag) for j in range(len(seasonalFLags))]
+              featuresForSLag = featuresForSLag + newF
+              storeDf.loc[:,newF] = storeDf[seasonalFLags].shift(lag).to_numpy()
+
+       seasonalFeatures = seasonF + seasonDiffF2 + featuresForSLag
+       #print('done with seasonal features')
+       
+
+       
+       # lag features / how many past datapoints are we tain
+       featuresForLag = ['target']
+       targetLagF = []#trainF
+       for i in targetLags:
+              lag = i+initial_lag
+              newF = [featuresForLag[j] + '_lag' + str(lag) for j in range(len(featuresForLag))]
+              targetLagF = targetLagF + newF
+              storeDf.loc[:,newF] = storeDf[featuresForLag].shift(lag).to_numpy()
+       #print('done with target lags')
+       
+       #------ also add future holidays!--------
+       storeDf, transferredF = addLaggedFutureHolidays(storeDf, features=['transferred','holidayType'], lags=10)
+
+       # rolling features
+       createdF = seasonF + targetLagF
+       rollingF = []
+       for rol in rolling:
+              for i in range(len(createdF)):
+                     #if 'sales_t-16'  in lagF[i]:
+                     #if createdF[i] in ['target','dcoilwtico']:# or 'dcoilwtico' in lagF[i]:#'target'  in lagF[i]:
+                            fm = createdF[i]+'_rollingM' + str(rol)
+                            fs = createdF[i]+'_rollingS' + str(rol)
+                            rollingF.append(fm)
+                            rollingF.append(fs)
+                            storeDf.loc[:,[fm]] = storeDf[createdF[i]].rolling(rol).mean()#.copy()
+                            storeDf.loc[:,[fs]] = storeDf[createdF[i]].rolling(rol).std()#.copy()
+              #print('done with rolling:', rol)
+       #print('done with rolling')
+
+
+       allF = rollingF + timeF + trainF +transferredF +seasonalFeatures + targetLagF
+       # we get a matrix that predicts only 1 timestamp -> stride it
+       if len(rolling) == 0:
+              storeDf = storeDf.iloc[max(max(targetLags), max(seasonalLags))+initial_lag+1:storeDf.shape[0]]
+       else:
+              storeDf = storeDf.iloc[max(max(targetLags), max(seasonalLags))+initial_lag+max(rolling)+1:storeDf.shape[0]]
+
+       
+       if prepPred:
+              train_subDf = storeDf.loc[(storeDf.date < date_string_test) & (storeDf.dataT == 'train')]
+              test_subDf  = storeDf.loc[(storeDf.date >= date_string_test)& (storeDf.dataT == 'train')]
+              pred_subDf = storeDf.loc[storeDf.dataT == 'test']
+       else:
+              train_subDf = storeDf.loc[storeDf.date < date_string_test]
+              test_subDf  = storeDf.loc[storeDf.date >= date_string_test]
+              pred_subDf = storeDf.loc[storeDf.dataT =='val']
+    
+       return train_subDf, test_subDf, pred_subDf, allF
