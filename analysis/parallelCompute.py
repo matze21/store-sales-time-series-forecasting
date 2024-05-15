@@ -69,13 +69,16 @@ def fitLGBM(args):
            'boosting':'gbdt',#'gbdt', #'rf' #'dart'
            'objective': 'regression',  # Assuming you're doing regression
            'metric': 'mse',  # Mean squared error
-           'num_leaves': 5,
+           'num_leaves': 3,
+           'lambda_l1': 0.1,
+           'lambda_l2': 0.2,
+           'learning_rate': 0.05,
            'feature_fraction': 0.9,
            'bagging_fraction': 0.8,
            'bagging_freq': 5,
            'verbose': -1,
            'force_col_wise':True,
-           #'num_iterations':500
+           'num_iterations':100
        }   
 
        # Train the model
@@ -117,9 +120,9 @@ if __name__ == '__main__':
 
     initial_lag = 16 # 16 = independent from previous predictions
     seasonalFDiff = 1
-    seasonalLags=[1,2,3,4,5,6,7,14,21,52,104]#range(21)
-    targetLags = [0,1,2,3,4,5,6,7,14,21,52,10]#range(21)# [7,14,21,28,35,42,52] #range(52)#[7,14,21]
-    rolling = [7,14,21,28,35,42,52,104]
+    seasonalLags=[1,2,3,4,5,6,7,14,21] #[1,2,3,4,5,6,7,14,21,52,104]#range(21)
+    targetLags = [0,1,2,3,4,5,6,7,14]#[0,1,2,3,4,5,6,7,14,21,52,10]#range(21)# [7,14,21,28,35,42,52] #range(52)#[7,14,21]
+    rolling = [7,21] #,21,28,35,42,14,52 ,104
     predictDiff =False
     logTransform=True
 
@@ -146,4 +149,4 @@ if __name__ == '__main__':
     print(results)
 
     df = pd.concat(results, axis = 0)
-    df.to_csv('multiprocess_lgbm.csv')
+    df.to_csv('multiprocess_lgbm_2.csv')

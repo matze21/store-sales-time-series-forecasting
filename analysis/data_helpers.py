@@ -437,18 +437,17 @@ def addLaggedFutureHolidays(storeDf, features = ['transferred', 'holidayType'], 
 
 
 def dataProcessing(storeDf, date_string_val, date_string_test, predictDiff, seasonalFDiff, seasonalLags, targetLags, rolling, initial_lag, prepPred = False):
-
        """ create training data based on lagged features not 2 sequences """
        trainF = [
               #'store_nbr', 'family', 
               #'sales', 
-              'onpromotion',# 'dataT',
+              # 'dataT',
               #'city', 'state', 'type', 'cluster', 
-              'dcoilwtico', 
+              #'dcoilwtico','onpromotion',  # added down the line!
               'holidayType',
               'description', 
               'transferred', 
-              'transactions', 
+              #'transactions', 
               'store_closed',
               'weekday_0', 'weekday_1', 'weekday_2',
               'weekday_3', 'weekday_4', 'weekday_5', 'weekday_6',
@@ -471,6 +470,7 @@ def dataProcessing(storeDf, date_string_val, date_string_test, predictDiff, seas
        # ln tranformation
        storeDf.loc[:,['logSales']] = np.log(storeDf.sales + 1)
        storeDf.loc[:,['transactions']] = storeDf['transactions'].fillna(0)
+       storeDf['onpromotion'] = (storeDf['onpromotion']- storeDf.onpromotion.mean()) /storeDf.onpromotion.std() # helps against overfitting  # 
 
        
        relevantSales = storeDf.loc[storeDf.dataT =='train']
@@ -478,14 +478,16 @@ def dataProcessing(storeDf, date_string_val, date_string_test, predictDiff, seas
 
 
        seasonF = []
-       for period in [7, 14,21,28,52,104,365]:
+       for period in [7]: #, 14,21,28,52  104, 365
               for pf in ['logSales','transactions','dcoilwtico']:
                      dec = sm.tsa.seasonal_decompose(relevantSales[pf],period = period, model = 'additive')
                      #print(period, max(dec.seasonal))
                      f = pf+'Seasonality_'+str(period)
                      storeDf.loc[:,[f]] = addSeasonality(period, dec, dfLen)
                      seasonF.append(f)
+
        seasonF.append('dcoilwtico')
+       seasonF.append('onpromotion')   # helps against overfitting
        #print('done with seasonal decompose')
 
        if predictDiff:
