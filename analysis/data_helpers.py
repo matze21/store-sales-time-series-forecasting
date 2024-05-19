@@ -565,3 +565,76 @@ def dataProcessing(storeDf, date_string_val, date_string_test, predictDiff, seas
               pred_subDf = storeDf.loc[storeDf.dataT =='val']
     
        return train_subDf, test_subDf, pred_subDf, allF
+
+
+def processAllData(data1, targetLags, featureLags, rolling, initial_lag, date_string_val=None):
+    grouped = data1.groupby(['store_nbr','family'])
+    data1['transactions'] = (data1.transactions - grouped.transactions.transform('mean')) / grouped.transactions.transform('std')
+    data1['linear_time'] = (data1['linear_time'] - grouped.linear_time.transform('mean')) / grouped.linear_time.transform('std')
+    data1['day_of_year'] = (data1['day_of_year'] - grouped.day_of_year.transform('mean')) / grouped.day_of_year.transform('std')
+    data1['dcoilwtico'] = (data1['dcoilwtico'] - grouped.dcoilwtico.transform('mean')) / grouped.dcoilwtico.transform('std')   
+
+    if date_string_val != None:
+        mask = (data1.date >= date_string_val) & (data1.dataT == 'train')
+        data1.loc[mask,['dataT']] = 'val'  
+
+
+    data1.loc[:,['logSales']] = np.log(data1.sales + 1)
+    arimaPred = pd.read_csv('csvs\sarima_313_117_and_id.csv')
+    data1 = pd.merge(data1, arimaPred[['id','sales','salesArima']], on=['id','sales'], how='left')
+    print('loaded arima data') 
+    data1['ref'] = data1['salesArima']
+    data1['target'] = data1['logSales'] - data1['ref']
+    
+    featuresForLag = ['target']
+    lagF_target = []
+    for l in targetLags:
+           lag = l + initial_lag
+           newF = [featuresForLag[j] + '_lag' + str(lag) for j in range(len(featuresForLag))]
+           lagF_target = lagF_target + newF
+           data1[newF] = data1.groupby(['store_nbr','family'])[featuresForLag].shift(lag)  
+
+
+
+    featuresForLag2 = ['salesArima','onpromotion','dcoilwtico']
+    lagF_features = []
+    for i in featureLags:
+           lag = i
+           newF = [featuresForLag2[j] + '_lag' + str(lag) for j in range(len(featuresForLag2))]
+           lagF_features = lagF_features + newF
+           data1[newF] = data1.groupby(['store_nbr','family'])[featuresForLag2].shift(lag) 
+
+    
+
+    lagF = lagF_target + lagF_features #+ groupedF
+    rollingF = []
+    for rol in rolling:
+           for i in range(len(lagF)):
+                  #if 'sales_t-16'  in lagF[i]:
+                  if 'target'  in lagF[i] or 'dcoilwtico'  in lagF[i] or 'onpromotion'  in lagF[i] or 'salesArima'  in lagF[i]:
+                         fm = lagF[i]+'_rollingM' + str(rol)
+                         fs = lagF[i]+'_rollingS' + str(rol)
+                         rollingF.append(fm)
+                         rollingF.append(fs)
+                         data1[fm] = data1.groupby(['store_nbr','family'])[lagF[i]].rolling(rol, min_periods=1).mean().reset_index(drop=True)#.set_index('id')#.reset_index() #transform('mean') #lambda x: x.rolling(rol).mean()).to_numpy()
+                         data1[fs] = data1.groupby(['store_nbr','family'])[lagF[i]].rolling(rol, min_periods=1).std().reset_index(drop=True)  
+
+    groupedF = []
+    featuresForGroups = ['onpromotion','salesArima'] #,'transactions'
+    for gFeature in ['family','cluster','type','store_nbr','city','state']:
+        newFGrouped = [featuresForGroups[j] + '_per' + gFeature for j in range(len(featuresForGroups))]
+        data1[newFGrouped] = data1.groupby(['date',gFeature])[featuresForGroups].transform('sum')
+        groupedF = groupedF + newFGrouped
+
+    featuresForLag3 = groupedF
+    lagF_features1 = []
+    for i in featureLags:
+           lag = i
+           newF = [featuresForLag3[j] + '_lag' + str(lag) for j in range(len(featuresForLag3))]
+           lagF_features1 = lagF_features1 + newF
+           data1[newF] = data1.groupby(['store_nbr','family'])[featuresForLag3].shift(lag) 
+    
+
+    data3 = data1.groupby(['store_nbr','family']).apply(lambda x: x.iloc[max(max(targetLags),max(featureLags))+initial_lag+1:])
+    data3 = data3.set_index('id').reset_index()
+    return data3, lagF + rollingF +lagF_features1+groupedF
